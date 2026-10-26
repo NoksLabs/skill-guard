@@ -1,23 +1,16 @@
 {
-  "compilerOptions": {
-    "target": "ES2023",
-    "lib": ["ES2023"],
-    "module": "NodeNext",
-    "moduleResolution": "NodeNext",
-    "types": ["node"],
-    "strict": true,
-    "exactOptionalPropertyTypes": true,
-    "noUncheckedIndexedAccess": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitOverride": true,
-    "verbatimModuleSyntax": true,
-    "erasableSyntaxOnly": true,
-    "allowImportingTsExtensions": true,
-    "rewriteRelativeImportExtensions": true,
-    "resolveJsonModule": true,
-    "noEmit": true,
-    "skipLibCheck": true
-  },
-  "include": ["src"]
+	"$schema": "http://json.schemastore.org/tsconfig",
+	"extends": "./tooling/typescript/tsconfig.base.json",
+	"include": ["src/**/*.ts"],
+	"exclude": ["**/dist/**", "**/node_modules/**"],
+	"compilerOptions": {
+		"composite": false,
+		"incremental": false,
+		"declaration": false,
+		"declarationMap": false,
+		"sourceMap": false,
+		"noEmit": true,
+		"types": ["node"],
+		"rootDir": "."
+	}
 }

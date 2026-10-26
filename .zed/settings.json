@@ -1,0 +1,150 @@
+{
+	"format_on_save": "on",
+	"file_scan_exclusions": [
+		"**/.git",
+		"**/.svn",
+		"**/.hg",
+		"**/.jj",
+		"**/CVS",
+		"**/.DS_Store",
+		"**/Thumbs.db",
+		"**/.classpath",
+		"**/.settings",
+		"**/node_modules"
+	],
+	"lsp": {
+		"oxlint": {
+			"initialization_options": {
+				"settings": {
+					"run": "onType",
+					"disableNestedConfig": true,
+					"configPath": ".oxlintrc.json",
+					"fixKind": "safe-fix",
+					"typeAware": true,
+					"unusedDisableDirectives": "deny"
+				}
+			}
+		},
+		"oxfmt": {
+			"initialization_options": {
+				"settings": {
+					"fmt.configPath": ".oxfmtrc.json",
+					"run": "onSave"
+				}
+			}
+		},
+		"typescript-ls": {
+			"initialization_options": {
+				"preferences": {
+					"includeCompletionsForImportStatements": true,
+					"includeCompletionsForModuleExports": true
+				},
+				"settings": {
+					"package_version": "7.0.2",
+					"typescript": {
+						"implementationsCodeLens": { "enabled": true },
+						"referencesCodeLens": { "enabled": true }
+					}
+				}
+			}
+		}
+	},
+	"languages": {
+		"JSON": {
+			"format_on_save": "on",
+			"prettier": {
+				"allowed": false
+			},
+			"formatter": [{ "language_server": { "name": "oxfmt" } }]
+		},
+		"JSONC": {
+			"format_on_save": "on",
+			"prettier": { "allowed": false },
+			"formatter": [{ "language_server": { "name": "oxfmt" } }]
+		},
+		"CSS": {
+			"prettier": { "allowed": false },
+			"formatter": [{ "language_server": { "name": "oxfmt" } }]
+		},
+		"JavaScript": {
+			"format_on_save": "on",
+			"prettier": { "allowed": false },
+			"formatter": [
+				{
+					"language_server": {
+						"name": "oxfmt"
+					}
+				}
+			],
+			"code_actions_on_format": {
+				"source.fixAll.oxc": true
+			}
+		},
+		"TypeScript": {
+			"format_on_save": "on",
+			"prettier": { "allowed": false },
+			"formatter": [
+				{
+					"language_server": {
+						"name": "oxfmt"
+					}
+				}
+			],
+			"code_actions_on_format": {
+				"source.removeUnusedImports.ts": true,
+				"source.organizeImports.ts": true,
+				"source.fixAll.oxc": true
+			},
+			"soft_wrap": "editor_width",
+			"language_servers": [
+				"effect-tsrs",
+				"!effect-tsgo",
+				"oxlint",
+				"oxfmt",
+				"!typescript-ls",
+				"!vtsls",
+				"!eslint"
+			]
+		},
+		"TSX": {
+			"format_on_save": "on",
+			"prettier": { "allowed": false },
+			"formatter": [
+				{
+					"language_server": {
+						"name": "oxfmt"
+					}
+				}
+			],
+			"code_actions_on_format": {
+				"source.removeUnusedImports.ts": true,
+				"source.organizeImports.ts": true,
+				"source.fixAll.oxc": true
+			},
+			"soft_wrap": "editor_width",
+			"language_servers": [
+				"effect-tsrs",
+				"!effect-tsgo",
+				"oxlint",
+				"oxfmt",
+				"!typescript-ls",
+				"!vtsls",
+				"tailwindcss-language-server",
+				"!eslint"
+			]
+		},
+		"Markdown": {
+			"format_on_save": "on",
+			"prettier": {
+				"allowed": false
+			},
+			"formatter": [
+				{
+					"language_server": {
+						"name": "oxfmt"
+					}
+				}
+			]
+		}
+	}
+}
