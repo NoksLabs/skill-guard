@@ -8,11 +8,15 @@ export const lineFindings = (
   file: string,
   fileSha256: string,
   lines: ReadonlyArray<string>,
+  foldedLines: ReadonlyArray<string>,
   rule: TextRule,
   severity: Severity,
 ): ReadonlyArray<Finding> =>
   lines.flatMap((text, index) => {
-    const match = rule.pattern.exec(text);
+    const folded = foldedLines[index] ?? text;
+    const match =
+      rule.pattern.exec(text) ??
+      (folded === text || rule.rawOnly === true ? null : rule.pattern.exec(folded));
     return match === null
       ? []
       : [

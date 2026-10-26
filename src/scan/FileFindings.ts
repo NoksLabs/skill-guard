@@ -7,6 +7,7 @@ import type { Finding } from './types/Finding.ts';
 import type { TargetFile } from './types/TargetFile.ts';
 import { urlFindings } from './UrlFindings.ts';
 import { fileKindOf } from './utils/fileKindOf.ts';
+import { foldConfusables } from './utils/foldConfusables.ts';
 
 const decoder = new TextDecoder();
 
@@ -22,13 +23,14 @@ export const fileFindings = (
   const kind = fileKindOf(extension);
   const content = decoder.decode(target.content);
   const lines = content.split('\n');
+  const foldedLines = lines.map(foldConfusables);
   return [
     ...structural,
     ...TEXT_RULES.flatMap((rule) => {
       const severity = rule.severity[kind];
       return severity === undefined
         ? []
-        : lineFindings(target.file, fileSha256, lines, rule, severity);
+        : lineFindings(target.file, fileSha256, lines, foldedLines, rule, severity);
     }),
     ...BLOB_RULES.flatMap((rule) => {
       const severity =

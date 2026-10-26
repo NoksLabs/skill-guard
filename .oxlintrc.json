@@ -110,7 +110,12 @@
 			}
 		},
 		{
-			"files": ["src/cli.ts", "src/claudeGate.ts", "src/piExtension.ts", "src/gate/PiHandlers.ts"],
+			"files": [
+				"src/cli.ts",
+				"src/claudeGate.ts",
+				"src/piExtension.ts",
+				"src/gate/HandlerRuntime.ts"
+			],
 			"rules": {
 				"effecttsgo/strict-effect-provide": "off"
 			}

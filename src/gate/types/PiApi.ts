@@ -7,7 +7,7 @@ export type PiInputEvent = { readonly text: string };
 
 export type PiToolCallEvent = {
   readonly toolName: string;
-  readonly input: { readonly path?: string };
+  readonly input: { readonly path?: string; readonly glob?: string; readonly command?: string };
 };
 
 export type PiInputResult = { readonly action: 'continue' | 'handled' };

@@ -47,16 +47,28 @@ export class SkillGate extends Context.Service           ()('skill-guard/gate/Sk
       return location === undefined ? ALLOWED : yield* checkSkill(projectDir, location);
     });
 
-    const checkFileRead = Effect.fn('SkillGate.checkFileRead')(function* (
+    const checkFileReads = Effect.fn('SkillGate.checkFileReads')(function* (
       projectDir        ,
       cwd        ,
-      filePath        ,
+      filePaths                       ,
     ) {
-      const location = yield* locator.containing(projectDir, path.resolve(cwd, filePath));
+      const location = yield* locator.containingAny(
+        projectDir,
+        filePaths.map((filePath) => path.resolve(cwd, filePath)),
+      );
       return location === undefined ? ALLOWED : yield* checkSkill(projectDir, location);
     });
 
-    return { checkSkill, checkInvocation, checkFileRead, projectRootOf: locator.projectRootOf };
+    const checkFileRead = (projectDir        , cwd        , filePath        ) =>
+      checkFileReads(projectDir, cwd, [filePath]);
+
+    return {
+      checkSkill,
+      checkInvocation,
+      checkFileRead,
+      checkFileReads,
+      projectRootOf: locator.projectRootOf,
+    };
   }),
 }) {
   static          Layer = Layer.effect(this)(this.make).pipe(
