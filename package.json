@@ -1,57 +1,71 @@
 {
-  "name": "skill-guard",
-  "version": "0.1.0",
-  "description": "Trust gate for agent skills: scan, review, approve by content hash, and block unapproved or changed skills before Claude Code or Pi loads them",
-  "keywords": [
-    "agent-skills",
-    "claude-code",
-    "pi",
-    "supply-chain",
-    "prompt-injection",
-    "security",
-    "skills"
-  ],
-  "homepage": "https://github.com/NoksLabs/skill-guard#readme",
-  "bugs": {
-    "url": "https://github.com/NoksLabs/skill-guard/issues"
-  },
-  "repository": {
-    "type": "git",
-    "url": "git+https://github.com/NoksLabs/skill-guard.git"
-  },
-  "license": "MIT",
-  "author": "NOKSLABS LTD",
-  "type": "module",
-  "bin": {
-    "skill-guard": "bin/skill-guard.js"
-  },
-  "exports": {
-    ".": "./dist/skillGate.js",
-    "./pi": "./dist/piExtension.js",
-    "./claude-hook": "./dist/claudeGate.js",
-    "./package.json": "./package.json"
-  },
-  "files": [
-    "bin",
-    "dist",
-    "README.md",
-    "LICENSE",
-    "src"
-  ],
-  "scripts": {
-    "build": "node --disable-warning=ExperimentalWarning scripts/build.js",
-    "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm run build"
-  },
-  "engines": {
-    "node": ">=22.18.0"
-  },
-  "dependencies": {
-    "@effect/platform-node": "^4.0.6",
-    "effect": "^4.0.6"
-  },
-  "devDependencies": {
-    "@types/node": "^26.6.5",
-    "typescript": "^7.0.2"
-  }
+	"name": "skill-guard",
+	"version": "0.1.0",
+	"description": "Trust gate for agent skills: scan, review, approve by content hash, and block unapproved or changed skills before Claude Code or Pi loads them",
+	"keywords": [
+		"agent-skills",
+		"claude-code",
+		"pi",
+		"prompt-injection",
+		"security",
+		"skills",
+		"supply-chain"
+	],
+	"homepage": "https://github.com/NoksLabs/skill-guard#readme",
+	"bugs": {
+		"url": "https://github.com/NoksLabs/skill-guard/issues"
+	},
+	"license": "MIT",
+	"author": "NOKSLABS LTD",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/NoksLabs/skill-guard.git"
+	},
+	"bin": {
+		"skill-guard": "bin/skill-guard.js"
+	},
+	"files": [
+		"bin",
+		"dist",
+		"src",
+		"README.md",
+		"LICENSE"
+	],
+	"type": "module",
+	"exports": {
+		".": "./dist/skillGate.js",
+		"./pi": "./dist/piExtension.js",
+		"./claude-hook": "./dist/claudeGate.js",
+		"./package.json": "./package.json"
+	},
+	"scripts": {
+		"build": "node --disable-warning=ExperimentalWarning scripts/build.js",
+		"typecheck": "tsc -p tsconfig.json && tsc -p tooling/oxlint/tsconfig.json",
+		"lint": "oxlint",
+		"lint:fix": "oxlint --fix",
+		"fmt": "oxfmt --write",
+		"fmt:check": "oxfmt --check",
+		"check-all": "oxfmt --check && oxlint && pnpm typecheck",
+		"prepublishOnly": "pnpm check-all && pnpm build",
+		"prepare": "effect-tsgo patch --oxlint --force && (effect-tsgo patch --no-typescript --tsrs --skip-missing || echo \"tsrs: no Effect-patched build for this platform, just ck uses tsc\") && (node --input-type=module -e \"import fs from 'node:fs'; import getExePath from './node_modules/tsrs/lib/getExePath.js'; fs.mkdirSync('node_modules/.tsrs', { recursive: true }); fs.rmSync('node_modules/.tsrs/tsrs', { force: true }); fs.symlinkSync(getExePath(), 'node_modules/.tsrs/tsrs')\" || echo \"tsrs: no native binary to link at node_modules/.tsrs/tsrs\") && (git config core.hooksPath scripts 2>/dev/null || true)"
+	},
+	"dependencies": {
+		"@effect/platform-node": "4.0.6",
+		"effect": "4.0.6"
+	},
+	"devDependencies": {
+		"@effect/tsgo": "0.57.0",
+		"@oxlint/plugins": "1.87.0",
+		"@types/node": "26.6.5",
+		"oxfmt": "0.71.0",
+		"oxlint": "1.87.0",
+		"oxlint-tsgolint": "7.0.2005",
+		"tsrs": "0.18.0-ts7.1.0-dev.20260929",
+		"typescript": "7.0.2"
+	},
+	"engines": {
+		"node": ">=22.18.0",
+		"pnpm": ">=12"
+	},
+	"packageManager": "pnpm@12.10.1"
 }

@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+node bin/skill-guard.js scan --staged || {
+  echo "pre-commit: unaccepted HIGH findings in staged skill or agent files (see above)." >&2
+  echo "  Fix them, or accept a reviewed finding with: skill-guard accept <skill> <rule> <file>" >&2
+  exit 1
+}
+
+readonly MAX_TOKENS=5000
+readonly MAX_BYTES=$((MAX_TOKENS * 4))
+
+is_ignored() {
+  case "$1" in
+    package-lock.json | pnpm-lock.yaml | yarn.lock | bun.lock | skills-lock.json) return 0 ;;
+    dist/* | coverage/*) return 0 ;;
+    .agents/skills/* | .claude/skills/*) return 0 ;;
+    tooling/oxlint/*) return 0 ;;
+    *.min.js | *.map) return 0 ;;
+    *.png | *.jpg | *.jpeg | *.gif | *.webp | *.ico | *.pdf | *.woff | *.woff2 | *.ttf | *.otf) return 0 ;;
+  esac
+  [ "$(git diff --cached --numstat -- "$1" | cut -f1)" = "-" ] && return 0
+  return 1
+}
+
+split_advice() {
+  case "$1" in
+    *.ts)
+      cat <<'ADVICE'
+    TypeScript module:
+      - One building block per file, named in PascalCase without a kind suffix.
+      - Schemas go in schemas/, Schema.decode* calls in decoders/, Schema.encode* calls in encoders/.
+      - Split a large service into one Context.Service per capability, each with its own static Layer.
+      - Update importers to the new files; do not leave a barrel re-exporting them.
+ADVICE
+      ;;
+    *.md)
+      cat <<'ADVICE'
+    Document:
+      - Split at the top-level headings into separate files in a folder named after the document.
+      - Keep the original file as a short index that links to each part.
+ADVICE
+      ;;
+    *)
+      cat <<'ADVICE'
+    General:
+      - Split by responsibility so each file holds one cohesive concern.
+ADVICE
+      ;;
+  esac
+}
+
+violations=0
+
+while IFS= read -r -d '' file; do
+  is_ignored "$file" && continue
+  bytes=$(git cat-file -s ":$file")
+  [ "$bytes" -le "$MAX_BYTES" ] && continue
+  tokens=$((bytes / 4))
+  if [ "$violations" -eq 0 ]; then
+    echo "pre-commit: staged files exceed the ${MAX_TOKENS}-token limit (tokens = bytes / 4)." >&2
+    echo >&2
+  fi
+  violations=$((violations + 1))
+  echo "  ✗ $file: ~${tokens} tokens (${bytes} bytes, limit ${MAX_BYTES} bytes)" >&2
+  echo "    Reduce it by at least $((tokens - MAX_TOKENS)) tokens, ideally well below the limit." >&2
+  split_advice "$file" >&2
+  echo >&2
+done < <(git diff --cached --name-only --diff-filter=ACMR -z)
+
+if [ "$violations" -gt 0 ]; then
+  echo "Split each file listed above without changing behaviour, run npm run typecheck, stage the result and commit again." >&2
+  exit 1
+fi

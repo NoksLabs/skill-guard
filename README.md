@@ -179,7 +179,7 @@ The Skill tool call is denied through `hookSpecificOutput.permissionDecision: "d
 `/name` prompt through `{ "decision": "block" }`, and a Read of any file inside a skill directory
 (through symlinks too) is denied. Names that resolve to no skill directory, such as built-in
 commands, pass. The Skill and prompt checks fail closed; the Read check fails open with a warning
-on stderr. A call takes about 100 ms on typical skills.
+on stderr. A call takes a little over 100 ms on typical skills.
 
 ### Claude Code hook and Pi extension (user level)
 
@@ -220,100 +220,11 @@ node node_modules/skill-guard/bin/skill-guard.js scan --staged || {
 `.claude/skills`, `.pi`, `AGENTS.md`, `CLAUDE.md`, `.claude/agents`, `.claude/commands`,
 `.claude/hooks` and `.claude/settings.json`.
 
-## Registry format
+## Reference
 
-`.agents/skills-trust.json` (project) and `~/.agents/skills-trust.json` (user):
-
-```json
-{
-  "version": 1,
-  "entries": {
-    "break-ui": {
-      "scope": "project",
-      "path": ".agents/skills/break-ui",
-      "source": { "repo": "emilkowalski/skills", "commit": "<sha>" },
-      "sha256": "<directory hash at approval>",
-      "status": "approved",
-      "scannedAt": "2026-10-19T16:50:08.008Z",
-      "approvedAt": "2026-10-19T16:50:08.014Z",
-      "acceptedFindings": [
-        {
-          "rule": "hijack-phrase",
-          "file": "SKILL.md",
-          "fileSha256": "<sha256 of SKILL.md>",
-          "note": "warns the user about injection, does not perform it",
-          "acceptedAt": "2026-10-19T16:50:02.884Z"
-        }
-      ]
-    }
-  }
-}
-```
-
-- `scope` is `project`, `user`, `plugin` or `file`.
-- `source` is `null` when unknown. `approve --source owner/repo@sha` sets it; without the flag,
-  `approve` looks the repo up in `skills-lock.json` and records the commit as `unpinned`.
-- `status` is `approved`, `pending` (has accepted findings but no approval) or `blocked`.
-- Entries for `file:<path>` targets only carry accepted findings; their `sha256` stays empty.
-- Entries are written sorted by id, so the file diffs cleanly in git.
-
-## Lock format
-
-If the project has a `skills-lock.json` in the format written by the `skills` CLI, `approve`
-reads the skill's `source` from it:
-
-```json
-{
-  "version": 1,
-  "skills": {
-    "break-ui": {
-      "source": "emilkowalski/skills",
-      "sourceType": "github",
-      "skillPath": "skills/break-ui/SKILL.md",
-      "computedHash": "<hash computed by the installer>"
-    }
-  }
-}
-```
-
-skill-guard never writes this file, and its own hash is independent of `computedHash`.
-
-## Rules
-
-Severity by file kind: prose / code / config. A dash means the rule does not apply to that kind.
-
-| Rule                      | Severity                 | Catches                                                                                                                                                              |
-| ------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `hidden-unicode`          | HIGH / HIGH / HIGH       | zero-width, bidi, invisible and Unicode-tag characters; a ZWJ inside an emoji sequence is allowed                                                                    |
-| `hijack-phrase`           | HIGH / HIGH / HIGH       | "ignore previous instructions", "you are now", "do not tell the user", "bypass safety", "new system prompt" and similar                                              |
-| `settings-tampering`      | HIGH / HIGH / MEDIUM     | `--dangerously*`, `bypassPermissions`, or text telling the agent to edit `settings.json`, `.claude/`, `CLAUDE.md`, `AGENTS.md`, `.pi/`, hooks or permission modes    |
-| `secret-path`             | MEDIUM / HIGH / LOW      | `.env`, `~/.ssh`, `id_rsa`, `~/.aws`, `~/.alchemy`, keychain access, `printenv`, `env \|`                                                                            |
-| `secret-token`            | LOW / MEDIUM / LOW       | mentions of API keys, access tokens, bearer tokens and similar                                                                                                       |
-| `pipe-to-shell`           | HIGH / HIGH / HIGH       | `\| sh`, `\| bash`, `\| node`, `\| python`, ...                                                                                                                      |
-| `download-command`        | MEDIUM / MEDIUM / MEDIUM | `curl`, `wget`, `Invoke-WebRequest`                                                                                                                                  |
-| `package-runner`          | MEDIUM / MEDIUM / MEDIUM | `npx`, `bunx`, `pnpm dlx`, `uvx`, `pipx run`, global `npm install`, `pip install`, `brew install`                                                                    |
-| `process-exec`            | - / MEDIUM / -           | `child_process`, `execSync`, `spawn(`, `subprocess.`, `os.system`                                                                                                    |
-| `dynamic-eval`            | - / HIGH / -             | `eval(`, `new Function(`, `vm.run`, `exec(compile(`                                                                                                                  |
-| `network-call`            | - / MEDIUM / -           | `fetch(`, `http.request(`, `axios`, `requests.get`, `urllib`, sockets, `WebSocket`                                                                                   |
-| `fs-write-outside`        | - / HIGH / -             | file writes, renames or deletes aimed at `/`, `~`, `$HOME` or `../`                                                                                                  |
-| `dynamic-module-load`     | MEDIUM / HIGH / -        | `exec_module`, `spec_from_file_location`, `importlib.machinery`, `runpy`                                                                                             |
-| `dynamic-import`          | - / MEDIUM / -           | `importlib.import_module(`, `__import__(`, `import(` or `require(` with a non-literal argument                                                                       |
-| `fs-write`                | - / MEDIUM / -           | file writes, moves and deletes in general                                                                                                                            |
-| `prompt-automation`       | HIGH / HIGH / HIGH       | `osascript`, System Events, Accessibility actions, `tccutil`, `xdotool`, `AutoHotkey`: clicking through OS or browser permission prompts                             |
-| `remote-instructions`     | HIGH / MEDIUM / MEDIUM   | "read / follow / fetch" pointing at a raw GitHub, Gist or `blob` URL                                                                                                 |
-| `remote-instruction-link` | MEDIUM / - / -           | a link to a remote Markdown document                                                                                                                                 |
-| `html-comment`            | MEDIUM / - / -           | `<!-- -->` in Markdown, hidden from the rendered page                                                                                                                |
-| `base64-blob`             | MEDIUM / MEDIUM / MEDIUM | 200 or more base64 characters in a row                                                                                                                               |
-| `hex-blob`                | MEDIUM / MEDIUM / MEDIUM | 128 or more hex characters in a row                                                                                                                                  |
-| `data-uri`                | MEDIUM / LOW / MEDIUM    | inline `data:...;base64,`                                                                                                                                            |
-| `external-url`            | LOW                      | any URL whose host is not on the documentation allowlist (Anthropic, MDN, Node, TypeScript, W3C, schema.org, a few framework docs sites, `example.com`, `localhost`) |
-| `symlink-escape`          | HIGH                     | a symlink whose target is outside the project (project skills) or outside the skill (user and plugin skills)                                                         |
-| `oversized-file`          | MEDIUM                   | a file over 512 KB                                                                                                                                                   |
-| `binary-file`             | MEDIUM, LOW for media    | a file with NUL bytes; images, fonts and PDFs are LOW                                                                                                                |
-
-Excerpts are masked: control and invisible characters are shown as `\u{...}` escapes, and any run
-of 24 or more token-like characters is shortened to its first four characters and its length, so a
-scan never prints a secret.
+- [Rules](docs/rules.md): every rule with its severity per file kind and what it catches.
+- [Registry format](docs/registry-format.md): the `skills-trust.json` entry fields.
+- [Lock format](docs/lock-format.md): how `approve` reads a skill's source from `skills-lock.json`.
 
 ## Limitations
 
@@ -332,15 +243,35 @@ scan never prints a secret.
 ## Development
 
 ```sh
-npm install
-npm run typecheck    # tsc --noEmit
-npm run build        # strips types from src/ into dist/ with node:module
+pnpm install          # also patches oxlint and tsc with the Effect language service
+pnpm check-all        # oxfmt --check, oxlint, tsc for src/ and tooling/
+pnpm build            # strips types from src/ into dist/ with node:module
+just ck               # typecheck with the Effect-patched tsrs when available
 ```
 
 The source is Effect code with erasable TypeScript syntax only, so the build is a type strip and
-`dist/` is committed. Every module is a set of `Effect` values over the `FileSystem`, `Path`,
-`Crypto` and `ChildProcessSpawner` services, provided by `@effect/platform-node` at the three
-entry points (`cli.ts`, `claudeGate.ts`, `piExtension.ts`).
+`dist/` is committed. Every module is an `Effect` value over the `FileSystem`, `Path`, `Crypto`,
+`ChildProcessSpawner` and `Stdio` services, provided by `@effect/platform-node` once at each of the
+three entry points (`cli.ts`, `claudeGate.ts`, `piExtension.ts`).
+
+`src/` is split into vertical slices, each with its own `schemas/`, `decoders/`, `encoders/`,
+`types/`, `constants/` and `utils/` directories and one `Context.Service` per capability:
+
+```text
+src/
+  shared/   Environment service, sha256, isoNow, concatBytes
+  skill/    SkillFiles (list, read, hash) and SkillLocator (project, user, plugin skills)
+  scan/     rules and findings, ContentScanner, ScanTargets, StagedBlobs
+  trust/    registry schemas, TrustRegistryStore, decideTrust
+  gate/     SkillGate, the Claude Code hook program and the Pi handlers
+  setup/    SetupInstaller
+  cli/      one file per command, SkillGuardCli
+```
+
+Linting is oxlint with the Effect preset from `@effect/tsgo` plus the `anti-slop` and `effect`
+plugins under `tooling/oxlint`; formatting is oxfmt. `scripts/pre-commit` runs `skill-guard scan
+--staged` and rejects any authored file over 5,000 tokens (20 KB), with advice on how to split it.
+`pnpm install` points `core.hooksPath` at `scripts`.
 
 ## License
 

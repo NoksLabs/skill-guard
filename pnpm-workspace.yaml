@@ -1,0 +1,15 @@
+preferFrozenLockfile: true
+autoInstallPeers: true
+strictPeerDependencies: false
+minimumReleaseAge: 3000
+minimumReleaseAgeExclude:
+  - '@effect/tsgo'
+  - '@effect/tsgo-*'
+  - 'effect'
+  - '@effect/*'
+  - 'oxlint'
+  - 'oxfmt'
+  - '@oxlint/*'
+  - '@oxfmt/*'
+  - 'oxlint-tsgolint'
+  - 'tsrs'

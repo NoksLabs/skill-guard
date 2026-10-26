@@ -1,0 +1,35 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"ignorePatterns": [
+		"**/node_modules/**",
+		".claude/worktrees/**",
+		"**/dist/**",
+		"**/build/**",
+		"**/.tsbuildinfo",
+		"**/.pi/**",
+		"**/.agents/**",
+		"**/.claude/**",
+		"**/*.md",
+		"package-lock.json"
+	],
+	"sortImports": true,
+	"jsdoc": true,
+	"tabWidth": 2,
+	"useTabs": false,
+	"endOfLine": "lf",
+	"printWidth": 100,
+	"singleQuote": true,
+	"semi": true,
+	"arrowParens": "always",
+	"jsxSingleQuote": true,
+	"overrides": [
+		{
+			"files": ["**/*.json"],
+			"options": {
+				"useTabs": true,
+				"tabWidth": 2,
+				"trailingComma": "none"
+			}
+		}
+	]
+}
