@@ -1,32 +1,44 @@
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import * as Effect from 'effect/Effect';
+import * as FileSystem from 'effect/FileSystem';
+import * as Path from 'effect/Path';
+import * as Schema from 'effect/Schema';
+import type * as PlatformError from 'effect/PlatformError';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import type { Finding } from './scanFiles.ts';
 
-export type AcceptedFinding = {
-  readonly rule: string;
-  readonly file: string;
-  readonly fileSha256: string;
-  readonly note: string;
-  readonly acceptedAt: string;
-};
+export const AcceptedFinding = Schema.Struct({
+  rule: Schema.String,
+  file: Schema.String,
+  fileSha256: Schema.String,
+  note: Schema.String,
+  acceptedAt: Schema.String,
+});
 
-export type TrustEntry = {
-  readonly scope: 'project' | 'user' | 'plugin' | 'file';
-  readonly path: string;
-  readonly source: { readonly repo: string; readonly commit: string } | null;
-  readonly sha256: string;
-  readonly status: 'approved' | 'pending' | 'blocked';
-  readonly scannedAt: string;
-  readonly approvedAt: string | null;
-  readonly acceptedFindings: ReadonlyArray<AcceptedFinding>;
-};
+export type AcceptedFinding = typeof AcceptedFinding.Type;
 
-export type TrustRegistry = {
-  readonly version: 1;
-  readonly entries: Readonly<Record<string, TrustEntry>>;
-};
+export const TrustEntry = Schema.Struct({
+  scope: Schema.Literals(['project', 'user', 'plugin', 'file']),
+  path: Schema.String,
+  source: Schema.NullOr(Schema.Struct({ repo: Schema.String, commit: Schema.String })),
+  sha256: Schema.String,
+  status: Schema.Literals(['approved', 'pending', 'blocked']),
+  scannedAt: Schema.String,
+  approvedAt: Schema.NullOr(Schema.String),
+  acceptedFindings: Schema.Array(AcceptedFinding),
+});
+
+export type TrustEntry = typeof TrustEntry.Type;
+
+export const TrustRegistry = Schema.Struct({
+  version: Schema.Literal(1),
+  entries: Schema.Record(Schema.String, TrustEntry),
+});
+
+export type TrustRegistry = typeof TrustRegistry.Type;
+
+const decodeRegistry = Schema.decodeUnknownEffect(Schema.fromJsonString(TrustRegistry));
 
 const EMPTY_REGISTRY: TrustRegistry = { version: 1, entries: {} };
 
@@ -35,27 +47,33 @@ export const projectRegistryPath = (projectDir: string): string =>
 
 export const userRegistryPath = (): string => join(homedir(), '.agents', 'skills-trust.json');
 
-export const loadRegistry = (path: string): TrustRegistry => {
-  const parsed: Partial<TrustRegistry> | null = existsSync(path)
-    ? JSON.parse(readFileSync(path, 'utf8'))
-    : EMPTY_REGISTRY;
-  return parsed?.entries === undefined ? EMPTY_REGISTRY : { version: 1, entries: parsed.entries };
-};
+export const loadRegistry = (
+  path: string,
+): Effect.Effect<TrustRegistry, Schema.SchemaError | PlatformError.PlatformError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    if (!(yield* fs.exists(path))) {
+      return EMPTY_REGISTRY;
+    }
+    return yield* decodeRegistry(yield* fs.readFileString(path));
+  });
 
-export const saveRegistry = (path: string, registry: TrustRegistry): void =>
-  writeFileSync(
-    path,
-    `${JSON.stringify(
-      {
-        version: 1,
-        entries: Object.fromEntries(
-          Object.entries(registry.entries).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
-        ),
-      },
-      null,
-      2,
-    )}\n`,
-  );
+export const saveRegistry = (
+  path: string,
+  registry: TrustRegistry,
+): Effect.Effect<void, PlatformError.PlatformError, FileSystem.FileSystem | Path.Path> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const pathService = yield* Path.Path;
+    const sorted: TrustRegistry = {
+      version: 1,
+      entries: Object.fromEntries(
+        Object.entries(registry.entries).toSorted(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)),
+      ),
+    };
+    yield* fs.makeDirectory(pathService.dirname(path), { recursive: true });
+    yield* fs.writeFileString(path, `${JSON.stringify(sorted, null, 2)}\n`);
+  });
 
 export const isAccepted = (finding: Finding, accepted: ReadonlyArray<AcceptedFinding>): boolean =>
   accepted.some(

@@ -4,7 +4,7 @@ A trust gate for agent skills. It scans skill files with deterministic rules, re
 approval of the exact content, and blocks Claude Code and Pi from loading a skill that was never
 approved, was blocked, or changed since approval.
 
-No dependencies. Node 22.18 or newer.
+Built on [Effect](https://effect.website) 4 and its `effect/cli` module. Node 22.18 or newer.
 
 ## Why
 
@@ -63,14 +63,17 @@ skill-guard block <id> [--user]
 skill-guard setup [--apply]
 ```
 
+`skill-guard` with no subcommand runs `scan` with default flags. `--help` on any command prints
+its arguments and flags, and `--completions bash|zsh|fish` prints a shell completion script.
+
 Skill ids:
 
-| Id | Where the skill lives |
-|---|---|
-| `<name>` | `.agents/skills`, `.claude/skills` or `.pi/skills` in the project |
-| `user:<name>` | `~/.claude/skills`, `~/.agents/skills` or `~/.pi/agent/skills` |
+| Id                       | Where the skill lives                                                                       |
+| ------------------------ | ------------------------------------------------------------------------------------------- |
+| `<name>`                 | `.agents/skills`, `.claude/skills` or `.pi/skills` in the project                           |
+| `user:<name>`            | `~/.claude/skills`, `~/.agents/skills` or `~/.pi/agent/skills`                              |
 | `plugin:<plugin>:<name>` | a Claude Code plugin's `skills/` directory, from `~/.claude/plugins/installed_plugins.json` |
-| `file:<path>` | an agent prompt file such as `AGENTS.md` or `.claude/agents/reviewer.md` |
+| `file:<path>`            | an agent prompt file such as `AGENTS.md` or `.claude/agents/reviewer.md`                    |
 
 `scan` with no argument scans every skill from all three sources, plus the project's `AGENTS.md`,
 `CLAUDE.md`, `.claude/agents`, `.claude/commands`, `.claude/hooks`, `.claude/settings.json` and
@@ -83,12 +86,12 @@ staged in git, for a pre-commit hook.
 
 Each skill line shows a trust state:
 
-| State | Meaning |
-|---|---|
-| `approved` | registry hash equals the current hash |
-| `CHANGED` | approved once, but some file changed since |
-| `UNAPPROVED` | no approval on record |
-| `BLOCKED` | blocked in the registry |
+| State        | Meaning                                    |
+| ------------ | ------------------------------------------ |
+| `approved`   | registry hash equals the current hash      |
+| `CHANGED`    | approved once, but some file changed since |
+| `UNAPPROVED` | no approval on record                      |
+| `BLOCKED`    | blocked in the registry                    |
 
 `scan` exits 1 when any target has an unaccepted HIGH finding, 0 otherwise, 2 on a usage error.
 MEDIUM and LOW findings never fail the scan; they are for the reviewer.
@@ -176,7 +179,7 @@ The Skill tool call is denied through `hookSpecificOutput.permissionDecision: "d
 `/name` prompt through `{ "decision": "block" }`, and a Read of any file inside a skill directory
 (through symlinks too) is denied. Names that resolve to no skill directory, such as built-in
 commands, pass. The Skill and prompt checks fail closed; the Read check fails open with a warning
-on stderr. A call takes well under 100 ms on typical skills.
+on stderr. A call takes about 100 ms on typical skills.
 
 ### Claude Code hook and Pi extension (user level)
 
@@ -192,7 +195,7 @@ package. Start a new Claude Code or Pi session afterwards.
 Create `.pi/extensions/skill-guard.ts`:
 
 ```ts
-export { default } from '../../node_modules/skill-guard/dist/piExtension.js';
+export { default } from "../../node_modules/skill-guard/dist/piExtension.js";
 ```
 
 The `input` handler runs before `/skill:name` expansion and answers `{ action: "handled" }` with
@@ -279,34 +282,34 @@ skill-guard never writes this file, and its own hash is independent of `computed
 
 Severity by file kind: prose / code / config. A dash means the rule does not apply to that kind.
 
-| Rule | Severity | Catches |
-|---|---|---|
-| `hidden-unicode` | HIGH / HIGH / HIGH | zero-width, bidi, invisible and Unicode-tag characters; a ZWJ inside an emoji sequence is allowed |
-| `hijack-phrase` | HIGH / HIGH / HIGH | "ignore previous instructions", "you are now", "do not tell the user", "bypass safety", "new system prompt" and similar |
-| `settings-tampering` | HIGH / HIGH / MEDIUM | `--dangerously*`, `bypassPermissions`, or text telling the agent to edit `settings.json`, `.claude/`, `CLAUDE.md`, `AGENTS.md`, `.pi/`, hooks or permission modes |
-| `secret-path` | MEDIUM / HIGH / LOW | `.env`, `~/.ssh`, `id_rsa`, `~/.aws`, `~/.alchemy`, keychain access, `printenv`, `env \|` |
-| `secret-token` | LOW / MEDIUM / LOW | mentions of API keys, access tokens, bearer tokens and similar |
-| `pipe-to-shell` | HIGH / HIGH / HIGH | `\| sh`, `\| bash`, `\| node`, `\| python`, ... |
-| `download-command` | MEDIUM / MEDIUM / MEDIUM | `curl`, `wget`, `Invoke-WebRequest` |
-| `package-runner` | MEDIUM / MEDIUM / MEDIUM | `npx`, `bunx`, `pnpm dlx`, `uvx`, `pipx run`, global `npm install`, `pip install`, `brew install` |
-| `process-exec` | - / MEDIUM / - | `child_process`, `execSync`, `spawn(`, `subprocess.`, `os.system` |
-| `dynamic-eval` | - / HIGH / - | `eval(`, `new Function(`, `vm.run`, `exec(compile(` |
-| `network-call` | - / MEDIUM / - | `fetch(`, `http.request(`, `axios`, `requests.get`, `urllib`, sockets, `WebSocket` |
-| `fs-write-outside` | - / HIGH / - | file writes, renames or deletes aimed at `/`, `~`, `$HOME` or `../` |
-| `dynamic-module-load` | MEDIUM / HIGH / - | `exec_module`, `spec_from_file_location`, `importlib.machinery`, `runpy` |
-| `dynamic-import` | - / MEDIUM / - | `importlib.import_module(`, `__import__(`, `import(` or `require(` with a non-literal argument |
-| `fs-write` | - / MEDIUM / - | file writes, moves and deletes in general |
-| `prompt-automation` | HIGH / HIGH / HIGH | `osascript`, System Events, Accessibility actions, `tccutil`, `xdotool`, `AutoHotkey`: clicking through OS or browser permission prompts |
-| `remote-instructions` | HIGH / MEDIUM / MEDIUM | "read / follow / fetch" pointing at a raw GitHub, Gist or `blob` URL |
-| `remote-instruction-link` | MEDIUM / - / - | a link to a remote Markdown document |
-| `html-comment` | MEDIUM / - / - | `<!-- -->` in Markdown, hidden from the rendered page |
-| `base64-blob` | MEDIUM / MEDIUM / MEDIUM | 200 or more base64 characters in a row |
-| `hex-blob` | MEDIUM / MEDIUM / MEDIUM | 128 or more hex characters in a row |
-| `data-uri` | MEDIUM / LOW / MEDIUM | inline `data:...;base64,` |
-| `external-url` | LOW | any URL whose host is not on the documentation allowlist (Anthropic, MDN, Node, TypeScript, W3C, schema.org, a few framework docs sites, `example.com`, `localhost`) |
-| `symlink-escape` | HIGH | a symlink whose target is outside the project (project skills) or outside the skill (user and plugin skills) |
-| `oversized-file` | MEDIUM | a file over 512 KB |
-| `binary-file` | MEDIUM, LOW for media | a file with NUL bytes; images, fonts and PDFs are LOW |
+| Rule                      | Severity                 | Catches                                                                                                                                                              |
+| ------------------------- | ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `hidden-unicode`          | HIGH / HIGH / HIGH       | zero-width, bidi, invisible and Unicode-tag characters; a ZWJ inside an emoji sequence is allowed                                                                    |
+| `hijack-phrase`           | HIGH / HIGH / HIGH       | "ignore previous instructions", "you are now", "do not tell the user", "bypass safety", "new system prompt" and similar                                              |
+| `settings-tampering`      | HIGH / HIGH / MEDIUM     | `--dangerously*`, `bypassPermissions`, or text telling the agent to edit `settings.json`, `.claude/`, `CLAUDE.md`, `AGENTS.md`, `.pi/`, hooks or permission modes    |
+| `secret-path`             | MEDIUM / HIGH / LOW      | `.env`, `~/.ssh`, `id_rsa`, `~/.aws`, `~/.alchemy`, keychain access, `printenv`, `env \|`                                                                            |
+| `secret-token`            | LOW / MEDIUM / LOW       | mentions of API keys, access tokens, bearer tokens and similar                                                                                                       |
+| `pipe-to-shell`           | HIGH / HIGH / HIGH       | `\| sh`, `\| bash`, `\| node`, `\| python`, ...                                                                                                                      |
+| `download-command`        | MEDIUM / MEDIUM / MEDIUM | `curl`, `wget`, `Invoke-WebRequest`                                                                                                                                  |
+| `package-runner`          | MEDIUM / MEDIUM / MEDIUM | `npx`, `bunx`, `pnpm dlx`, `uvx`, `pipx run`, global `npm install`, `pip install`, `brew install`                                                                    |
+| `process-exec`            | - / MEDIUM / -           | `child_process`, `execSync`, `spawn(`, `subprocess.`, `os.system`                                                                                                    |
+| `dynamic-eval`            | - / HIGH / -             | `eval(`, `new Function(`, `vm.run`, `exec(compile(`                                                                                                                  |
+| `network-call`            | - / MEDIUM / -           | `fetch(`, `http.request(`, `axios`, `requests.get`, `urllib`, sockets, `WebSocket`                                                                                   |
+| `fs-write-outside`        | - / HIGH / -             | file writes, renames or deletes aimed at `/`, `~`, `$HOME` or `../`                                                                                                  |
+| `dynamic-module-load`     | MEDIUM / HIGH / -        | `exec_module`, `spec_from_file_location`, `importlib.machinery`, `runpy`                                                                                             |
+| `dynamic-import`          | - / MEDIUM / -           | `importlib.import_module(`, `__import__(`, `import(` or `require(` with a non-literal argument                                                                       |
+| `fs-write`                | - / MEDIUM / -           | file writes, moves and deletes in general                                                                                                                            |
+| `prompt-automation`       | HIGH / HIGH / HIGH       | `osascript`, System Events, Accessibility actions, `tccutil`, `xdotool`, `AutoHotkey`: clicking through OS or browser permission prompts                             |
+| `remote-instructions`     | HIGH / MEDIUM / MEDIUM   | "read / follow / fetch" pointing at a raw GitHub, Gist or `blob` URL                                                                                                 |
+| `remote-instruction-link` | MEDIUM / - / -           | a link to a remote Markdown document                                                                                                                                 |
+| `html-comment`            | MEDIUM / - / -           | `<!-- -->` in Markdown, hidden from the rendered page                                                                                                                |
+| `base64-blob`             | MEDIUM / MEDIUM / MEDIUM | 200 or more base64 characters in a row                                                                                                                               |
+| `hex-blob`                | MEDIUM / MEDIUM / MEDIUM | 128 or more hex characters in a row                                                                                                                                  |
+| `data-uri`                | MEDIUM / LOW / MEDIUM    | inline `data:...;base64,`                                                                                                                                            |
+| `external-url`            | LOW                      | any URL whose host is not on the documentation allowlist (Anthropic, MDN, Node, TypeScript, W3C, schema.org, a few framework docs sites, `example.com`, `localhost`) |
+| `symlink-escape`          | HIGH                     | a symlink whose target is outside the project (project skills) or outside the skill (user and plugin skills)                                                         |
+| `oversized-file`          | MEDIUM                   | a file over 512 KB                                                                                                                                                   |
+| `binary-file`             | MEDIUM, LOW for media    | a file with NUL bytes; images, fonts and PDFs are LOW                                                                                                                |
 
 Excerpts are masked: control and invisible characters are shown as `\u{...}` escapes, and any run
 of 24 or more token-like characters is shortened to its first four characters and its length, so a
@@ -326,6 +329,19 @@ scan never prints a secret.
 - The rules are deterministic patterns. They surface the obvious; they do not replace reading the
   skill.
 
+## Development
+
+```sh
+npm install
+npm run typecheck    # tsc --noEmit
+npm run build        # strips types from src/ into dist/ with node:module
+```
+
+The source is Effect code with erasable TypeScript syntax only, so the build is a type strip and
+`dist/` is committed. Every module is a set of `Effect` values over the `FileSystem`, `Path`,
+`Crypto` and `ChildProcessSpawner` services, provided by `@effect/platform-node` at the three
+entry points (`cli.ts`, `claudeGate.ts`, `piExtension.ts`).
+
 ## License
 
-MIT, copyright 2026 NoksLabs.
+MIT, copyright 2026 NOKSLABS LTD.

@@ -1,3 +1,6 @@
+import type * as Crypto from 'effect/Crypto';
+import * as Effect from 'effect/Effect';
+import type * as PlatformError from 'effect/PlatformError';
 import { extname } from 'node:path';
 
 import {
@@ -162,12 +165,23 @@ const fileLevel = (
   message: string,
 ): Finding => ({ rule, severity, file, line: 0, message, excerpt: '', fileSha256 });
 
+const decoder = new TextDecoder();
+
 export const scanContent = (p: {
   readonly file: string;
-  readonly content: Buffer;
+  readonly content: Uint8Array;
   readonly escapesRoot?: string | undefined;
-}): ReadonlyArray<Finding> => {
-  const fileSha256 = sha256(p.content);
+}): Effect.Effect<ReadonlyArray<Finding>, PlatformError.PlatformError, Crypto.Crypto> =>
+  sha256(p.content).pipe(Effect.map((fileSha256) => scanWithHash(p, fileSha256)));
+
+const scanWithHash = (
+  p: {
+    readonly file: string;
+    readonly content: Uint8Array;
+    readonly escapesRoot?: string | undefined;
+  },
+  fileSha256: string,
+): ReadonlyArray<Finding> => {
   const extension = extname(p.file).toLowerCase();
   const isBinary = p.content.subarray(0, 8192).includes(0);
   const structural = [
@@ -209,7 +223,7 @@ export const scanContent = (p: {
     return structural;
   }
   const kind = fileKindOf(p.file);
-  const content = p.content.toString('utf8');
+  const content = decoder.decode(p.content);
   const lines = content.split('\n');
   return [
     ...structural,
