@@ -6,4 +6,5 @@ export type TextRule = {
   readonly pattern: RegExp;
   readonly severity: Readonly<Record<FileKind, Severity | undefined>>;
   readonly message: string;
+  readonly rawOnly?: boolean;
 };

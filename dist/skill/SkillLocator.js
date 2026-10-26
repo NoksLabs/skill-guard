@@ -105,18 +105,33 @@ export class SkillLocator extends Context.Service              ()(
         return start;
       });
 
-      const containing = Effect.fn('SkillLocator.containing')(function* (
+      const containingAny = Effect.fn('SkillLocator.containingAny')(function* (
         projectDir        ,
-        filePath        ,
+        filePaths                       ,
       ) {
-        const real = (yield* fs.exists(filePath))
-          ? yield* fs.realPath(filePath)
-          : path.resolve(filePath);
-        return (yield* allSkills(projectDir)).find(
-          (location) =>
-            real.startsWith(`${location.realDir}/`) || real.startsWith(`${location.dir}/`),
+        if (filePaths.length === 0) {
+          return undefined;
+        }
+        const skills = yield* allSkills(projectDir);
+        const reals = yield* Effect.forEach(filePaths, (filePath) =>
+          fs
+            .exists(filePath)
+            .pipe(
+              Effect.flatMap((exists) =>
+                exists ? fs.realPath(filePath) : Effect.succeed(path.resolve(filePath)),
+              ),
+            ),
+        );
+        return skills.find((location) =>
+          reals.some(
+            (real) =>
+              real.startsWith(`${location.realDir}/`) || real.startsWith(`${location.dir}/`),
+          ),
         );
       });
+
+      const containing = (projectDir        , filePath        ) =>
+        containingAny(projectDir, [filePath]);
 
       const named = Effect.fn('SkillLocator.named')(function* (
         projectDir        ,
@@ -143,6 +158,7 @@ export class SkillLocator extends Context.Service              ()(
         allSkills,
         projectRootOf,
         containing,
+        containingAny,
         named,
       };
     }),

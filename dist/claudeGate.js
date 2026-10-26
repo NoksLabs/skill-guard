@@ -4,12 +4,12 @@ import * as Effect from 'effect/Effect';
 import * as Layer from 'effect/Layer';
 
 import { claudeGateProgram } from './gate/ClaudeGateProgram.js';
-import { SkillGate } from './gate/SkillGate.js';
+import { ToolCallGate } from './gate/ToolCallGate.js';
 import { Environment } from './shared/Environment.js';
 
 claudeGateProgram.pipe(
   Effect.provide(
-    Layer.provideMerge(Layer.mergeAll(SkillGate.Layer, Environment.Layer), NodeServices.layer),
+    Layer.provideMerge(Layer.mergeAll(ToolCallGate.Layer, Environment.Layer), NodeServices.layer),
   ),
   NodeRuntime.runMain,
 );

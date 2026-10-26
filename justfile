@@ -18,10 +18,12 @@ ck:
     set -euo pipefail
     if [ -x node_modules/.tsrs/tsrs ]; then
       npm exec -- tsrs -p tsconfig.json
+      npm exec -- tsrs -p tsconfig.test.json
       npm exec -- tsrs -p tooling/oxlint/tsconfig.json
     else
       echo "tsrs: no Effect-patched build on this platform, checking with tsc" >&2
       npm exec -- tsc -p tsconfig.json
+      npm exec -- tsc -p tsconfig.test.json
       npm exec -- tsc -p tooling/oxlint/tsconfig.json
     fi
 
@@ -33,6 +35,9 @@ b-ck:
 
 b:
     npm run build
+
+t:
+    npm exec -- vitest run
 
 skills-scan *args:
     node bin/skill-guard.js scan {{args}}
