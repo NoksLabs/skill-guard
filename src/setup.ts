@@ -1,4 +1,8 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import * as Console from 'effect/Console';
+import * as Effect from 'effect/Effect';
+import * as FileSystem from 'effect/FileSystem';
+import * as Schema from 'effect/Schema';
+import type * as PlatformError from 'effect/PlatformError';
 import { homedir } from 'node:os';
 import { join } from 'node:path';
 
@@ -11,9 +15,6 @@ const gateCommand = `node "${join(packageDir, 'claudeGate.js')}"`;
 
 type HookCommand = { readonly type: string; readonly command: string; readonly timeout?: number };
 type HookGroup = { readonly matcher?: string; readonly hooks: ReadonlyArray<HookCommand> };
-type ClaudeSettings = {
-  readonly hooks?: Readonly<Record<string, ReadonlyArray<HookGroup>>>;
-};
 
 const guardHooks: ReadonlyArray<HookCommand> = [
   { type: 'command', command: gateCommand, timeout: 10 },
@@ -23,15 +24,31 @@ const toolGuardGroup: HookGroup = { matcher: 'Skill|Read', hooks: guardHooks };
 
 const promptGuardGroup: HookGroup = { hooks: guardHooks };
 
-const hasGuard = (groups: ReadonlyArray<HookGroup> | undefined): boolean =>
-  (groups ?? []).some((group) =>
-    group.hooks.some((hook) => /skill-guard\/.*claudeGate\.js/.test(hook.command)),
+const decodeJson = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Unknown));
+
+const isRecord = (value: unknown): value is Readonly<Record<string, unknown>> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+
+const HookGroups = Schema.Array(
+  Schema.Struct({ hooks: Schema.Array(Schema.Struct({ command: Schema.optionalKey(Schema.String) })) }),
+);
+
+const hasGuard = (groups: ReadonlyArray<unknown>): boolean =>
+  Schema.decodeUnknownOption(HookGroups)(groups).pipe(
+    (decoded) => decoded._tag === 'Some' && decoded.value.some((group) =>
+      group.hooks.some((hook) => /skill-guard\/.*claudeGate\.js/.test(hook.command ?? '')),
+    ),
   );
 
-const withGuard = (settings: ClaudeSettings): ClaudeSettings => {
-  const hooks = settings.hooks ?? {};
-  const preToolUse = hooks['PreToolUse'] ?? [];
-  const userPromptSubmit = hooks['UserPromptSubmit'] ?? [];
+const groupsOf = (hooks: Readonly<Record<string, unknown>>, event: string): ReadonlyArray<unknown> => {
+  const groups = hooks[event];
+  return Array.isArray(groups) ? groups : [];
+};
+
+const withGuard = (settings: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> => {
+  const hooks = isRecord(settings['hooks']) ? settings['hooks'] : {};
+  const preToolUse = groupsOf(hooks, 'PreToolUse');
+  const userPromptSubmit = groupsOf(hooks, 'UserPromptSubmit');
   return {
     ...settings,
     hooks: {
@@ -44,37 +61,40 @@ const withGuard = (settings: ClaudeSettings): ClaudeSettings => {
   };
 };
 
-export const runSetup = (apply: boolean): number => {
-  const currentSettings: ClaudeSettings | null = existsSync(claudeSettingsFile)
-    ? JSON.parse(readFileSync(claudeSettingsFile, 'utf8'))
-    : {};
-  const settings: ClaudeSettings = currentSettings ?? {};
-  const nextSettings = withGuard(settings);
-  const settingsChanged = JSON.stringify(nextSettings) !== JSON.stringify(settings);
-  const piExtension = `export { default } from '${join(packageDir, 'piExtension.js')}';\n`;
+export const runSetup = (
+  apply: boolean,
+): Effect.Effect<void, PlatformError.PlatformError | Schema.SchemaError, FileSystem.FileSystem> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const settingsExist = yield* fs.exists(claudeSettingsFile);
+    const parsed = settingsExist ? yield* decodeJson(yield* fs.readFileString(claudeSettingsFile)) : {};
+    const settings = isRecord(parsed) ? parsed : {};
+    const nextSettings = withGuard(settings);
+    const settingsChanged = JSON.stringify(nextSettings) !== JSON.stringify(settings);
+    const piExtension = `export { default } from '${join(packageDir, 'piExtension.js')}';\n`;
 
-  console.log(`skill-guard user-level setup${apply ? '' : ' (dry run; pass --apply to write)'}`);
-  console.log(`  write ${piExtensionFile}`);
-  console.log(
-    settingsChanged
-      ? `  add PreToolUse(Skill|Read) + UserPromptSubmit hooks to ${claudeSettingsFile} (backup: settings.json.bak-skill-guard)`
-      : `  ${claudeSettingsFile} already has the skill-guard hooks`,
-  );
-  console.log(
-    `  user registry: ${userRegistryPath()} (approve with: skill-guard approve user:<name> --user)`,
-  );
+    yield* Console.log(`skill-guard user-level setup${apply ? '' : ' (dry run; pass --apply to write)'}`);
+    yield* Console.log(`  write ${piExtensionFile}`);
+    yield* Console.log(
+      settingsChanged
+        ? `  add PreToolUse(Skill|Read) + UserPromptSubmit hooks to ${claudeSettingsFile} (backup: settings.json.bak-skill-guard)`
+        : `  ${claudeSettingsFile} already has the skill-guard hooks`,
+    );
+    yield* Console.log(
+      `  user registry: ${userRegistryPath()} (approve with: skill-guard approve user:<name> --user)`,
+    );
 
-  if (apply) {
-    mkdirSync(join(homedir(), '.pi', 'agent', 'extensions'), { recursive: true });
-    writeFileSync(piExtensionFile, piExtension);
-    if (settingsChanged) {
-      if (existsSync(claudeSettingsFile)) {
-        copyFileSync(claudeSettingsFile, `${claudeSettingsFile}.bak-skill-guard`);
-      }
-      mkdirSync(join(homedir(), '.claude'), { recursive: true });
-      writeFileSync(claudeSettingsFile, `${JSON.stringify(nextSettings, null, 2)}\n`);
+    if (!apply) {
+      return;
     }
-    console.log('done. Start a new Claude Code / Pi session to load the guard.');
-  }
-  return 0;
-};
+    yield* fs.makeDirectory(join(homedir(), '.pi', 'agent', 'extensions'), { recursive: true });
+    yield* fs.writeFileString(piExtensionFile, piExtension);
+    if (settingsChanged) {
+      if (settingsExist) {
+        yield* fs.copyFile(claudeSettingsFile, `${claudeSettingsFile}.bak-skill-guard`);
+      }
+      yield* fs.makeDirectory(join(homedir(), '.claude'), { recursive: true });
+      yield* fs.writeFileString(claudeSettingsFile, `${JSON.stringify(nextSettings, null, 2)}\n`);
+    }
+    yield* Console.log('done. Start a new Claude Code / Pi session to load the guard.');
+  });

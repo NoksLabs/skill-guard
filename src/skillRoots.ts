@@ -1,6 +1,10 @@
-import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'node:fs';
+import * as Effect from 'effect/Effect';
+import * as FileSystem from 'effect/FileSystem';
+import * as Path from 'effect/Path';
+import * as Schema from 'effect/Schema';
+import type * as PlatformError from 'effect/PlatformError';
 import { homedir } from 'node:os';
-import { join, resolve } from 'node:path';
+import { join } from 'node:path';
 
 export type SkillScope = 'project' | 'user' | 'plugin';
 
@@ -12,17 +16,37 @@ export type SkillLocation = {
   readonly realDir: string;
 };
 
-const isDirectory = (path: string): boolean => existsSync(path) && statSync(path).isDirectory();
+type Services = FileSystem.FileSystem | Path.Path;
 
-const hasSkillFile = (dir: string): boolean => existsSync(join(dir, 'SKILL.md'));
+type Failure = PlatformError.PlatformError | Schema.SchemaError;
 
-export const projectRootOf = (cwd: string): string => {
-  const start = resolve(cwd);
-  const ancestors = start
-    .split('/')
-    .map((_part, index, parts) => parts.slice(0, parts.length - index).join('/') || '/');
-  return ancestors.find((dir) => existsSync(join(dir, '.git'))) ?? start;
-};
+const isDirectory = (path: string): Effect.Effect<boolean, PlatformError.PlatformError, FileSystem.FileSystem> =>
+  FileSystem.FileSystem.use((fs) =>
+    fs.exists(path).pipe(
+      Effect.flatMap((exists) =>
+        exists ? fs.stat(path).pipe(Effect.map((stats) => stats.type === 'Directory')) : Effect.succeed(false),
+      ),
+    ),
+  );
+
+const hasSkillFile = (dir: string): Effect.Effect<boolean, PlatformError.PlatformError, FileSystem.FileSystem> =>
+  FileSystem.FileSystem.use((fs) => fs.exists(join(dir, 'SKILL.md')));
+
+export const projectRootOf = (cwd: string): Effect.Effect<string, PlatformError.PlatformError, Services> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const start = path.resolve(cwd);
+    const ancestors = start
+      .split('/')
+      .map((_part, index, parts) => parts.slice(0, parts.length - index).join('/') || '/');
+    for (const dir of ancestors) {
+      if (yield* fs.exists(join(dir, '.git'))) {
+        return dir;
+      }
+    }
+    return start;
+  });
 
 export const projectSkillRoots = (projectDir: string): ReadonlyArray<string> => [
   join(projectDir, '.agents', 'skills'),
@@ -36,45 +60,79 @@ export const userSkillRoots = (): ReadonlyArray<string> => [
   join(homedir(), '.pi', 'agent', 'skills'),
 ];
 
-const skillsIn = (root: string, scope: SkillScope, idOf: (name: string) => string) =>
-  isDirectory(root)
-    ? readdirSync(root)
-        .filter((name) => !name.startsWith('.'))
-        .map((name) => join(root, name))
-        .filter((dir) => isDirectory(dir) && hasSkillFile(dir))
-        .map((dir): SkillLocation => ({
-          id: idOf(dir.slice(root.length + 1)),
-          name: dir.slice(root.length + 1),
+const skillsIn = (
+  root: string,
+  scope: SkillScope,
+  idOf: (name: string) => string,
+): Effect.Effect<ReadonlyArray<SkillLocation>, PlatformError.PlatformError, Services> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    if (!(yield* isDirectory(root))) {
+      return [];
+    }
+    const names = (yield* fs.readDirectory(root)).filter((name) => !name.startsWith('.'));
+    const located = yield* Effect.forEach(names, (name) =>
+      Effect.gen(function* () {
+        const dir = join(root, name);
+        if (!(yield* isDirectory(dir)) || !(yield* hasSkillFile(dir))) {
+          return [];
+        }
+        const location: SkillLocation = {
+          id: idOf(name),
+          name,
           scope,
           dir,
-          realDir: realpathSync(dir),
-        }))
-    : [];
+          realDir: yield* fs.realPath(dir),
+        };
+        return [location];
+      }),
+    );
+    return located.flat();
+  });
 
-type PluginInstall = { readonly installPath?: string };
+const InstalledPlugins = Schema.fromJsonString(
+  Schema.NullOr(
+    Schema.Struct({
+      plugins: Schema.optionalKey(
+        Schema.Record(
+          Schema.String,
+          Schema.Array(Schema.Struct({ installPath: Schema.optionalKey(Schema.String) })),
+        ),
+      ),
+    }),
+  ),
+);
 
-type InstalledPlugins = {
-  readonly plugins?: Readonly<Record<string, ReadonlyArray<PluginInstall>>>;
-};
+const decodeInstalledPlugins = Schema.decodeUnknownEffect(InstalledPlugins);
 
-const pluginInstallDirs = (): ReadonlyArray<{ readonly plugin: string; readonly dir: string }> => {
+const pluginInstallDirs: Effect.Effect<
+  ReadonlyArray<{ readonly plugin: string; readonly dir: string }>,
+  Failure,
+  FileSystem.FileSystem
+> = Effect.gen(function* () {
+  const fs = yield* FileSystem.FileSystem;
   const file = join(homedir(), '.claude', 'plugins', 'installed_plugins.json');
-  const parsed: InstalledPlugins | null = existsSync(file)
-    ? JSON.parse(readFileSync(file, 'utf8'))
-    : {};
-  const plugins = parsed?.plugins ?? {};
-  return Object.entries(plugins).flatMap(([key, installs]) =>
+  if (!(yield* fs.exists(file))) {
+    return [];
+  }
+  const parsed = yield* decodeInstalledPlugins(yield* fs.readFileString(file));
+  return Object.entries(parsed?.plugins ?? {}).flatMap(([key, installs]) =>
     installs.flatMap((install) =>
       install.installPath === undefined
         ? []
         : [{ plugin: key.split('@')[0] ?? key, dir: install.installPath }],
     ),
   );
-};
+});
 
-export const pluginSkills = (): ReadonlyArray<SkillLocation> =>
-  pluginInstallDirs().flatMap(({ plugin, dir }) =>
-    skillsIn(join(dir, 'skills'), 'plugin', (name) => `plugin:${plugin}:${name}`),
+export const pluginSkills: Effect.Effect<ReadonlyArray<SkillLocation>, Failure, Services> =
+  pluginInstallDirs.pipe(
+    Effect.flatMap((installs) =>
+      Effect.forEach(installs, ({ plugin, dir }) =>
+        skillsIn(join(dir, 'skills'), 'plugin', (name) => `plugin:${plugin}:${name}`),
+      ),
+    ),
+    Effect.map((located) => located.flat()),
   );
 
 const uniqueByRealDir = (locations: ReadonlyArray<SkillLocation>): ReadonlyArray<SkillLocation> =>
@@ -85,38 +143,56 @@ const uniqueByRealDir = (locations: ReadonlyArray<SkillLocation>): ReadonlyArray
       ) === index,
   );
 
-export const projectSkills = (projectDir: string): ReadonlyArray<SkillLocation> =>
-  uniqueByRealDir(
-    projectSkillRoots(projectDir).flatMap((root) => skillsIn(root, 'project', (name) => name)),
-  );
+export const projectSkills = (
+  projectDir: string,
+): Effect.Effect<ReadonlyArray<SkillLocation>, PlatformError.PlatformError, Services> =>
+  Effect.forEach(projectSkillRoots(projectDir), (root) =>
+    skillsIn(root, 'project', (name) => name),
+  ).pipe(Effect.map((located) => uniqueByRealDir(located.flat())));
 
-export const userSkills = (): ReadonlyArray<SkillLocation> =>
-  uniqueByRealDir(
-    userSkillRoots().flatMap((root) => skillsIn(root, 'user', (name) => `user:${name}`)),
-  );
+export const userSkills: Effect.Effect<ReadonlyArray<SkillLocation>, PlatformError.PlatformError, Services> =
+  Effect.forEach(userSkillRoots(), (root) =>
+    skillsIn(root, 'user', (name) => `user:${name}`),
+  ).pipe(Effect.map((located) => uniqueByRealDir(located.flat())));
 
-export const allSkills = (projectDir: string): ReadonlyArray<SkillLocation> => [
-  ...projectSkills(projectDir),
-  ...userSkills(),
-  ...pluginSkills(),
-];
+export const allSkills = (
+  projectDir: string,
+): Effect.Effect<ReadonlyArray<SkillLocation>, Failure, Services> =>
+  Effect.all([projectSkills(projectDir), userSkills, pluginSkills]).pipe(
+    Effect.map((groups) => groups.flat()),
+  );
 
 export const skillContaining = (
   projectDir: string,
   filePath: string,
-): SkillLocation | undefined => {
-  const real = existsSync(filePath) ? realpathSync(filePath) : resolve(filePath);
-  return allSkills(projectDir).find(
-    (location) => real.startsWith(`${location.realDir}/`) || real.startsWith(`${location.dir}/`),
-  );
-};
+): Effect.Effect<SkillLocation | undefined, Failure, Services> =>
+  Effect.gen(function* () {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const real = (yield* fs.exists(filePath))
+      ? yield* fs.realPath(filePath)
+      : path.resolve(filePath);
+    return (yield* allSkills(projectDir)).find(
+      (location) =>
+        real.startsWith(`${location.realDir}/`) || real.startsWith(`${location.dir}/`),
+    );
+  });
 
-export const skillNamed = (projectDir: string, invoked: string): SkillLocation | undefined => {
-  const parts = invoked.split(':');
-  const skillName = parts.at(-1) ?? invoked;
-  const plugin = parts.length === 2 ? parts[0] : undefined;
-  return plugin === undefined
-    ? (projectSkills(projectDir).find((location) => location.name === skillName) ??
-        userSkills().find((location) => location.name === skillName))
-    : pluginSkills().find((location) => location.id === `plugin:${plugin}:${skillName}`);
-};
+export const skillNamed = (
+  projectDir: string,
+  invoked: string,
+): Effect.Effect<SkillLocation | undefined, Failure, Services> =>
+  Effect.gen(function* () {
+    const parts = invoked.split(':');
+    const skillName = parts.at(-1) ?? invoked;
+    const plugin = parts.length === 2 ? parts[0] : undefined;
+    if (plugin !== undefined) {
+      return (yield* pluginSkills).find(
+        (location) => location.id === `plugin:${plugin}:${skillName}`,
+      );
+    }
+    const project = (yield* projectSkills(projectDir)).find(
+      (location) => location.name === skillName,
+    );
+    return project ?? (yield* userSkills).find((location) => location.name === skillName);
+  });

@@ -1,3 +1,8 @@
+import * as NodeServices from '@effect/platform-node/NodeServices';
+import * as Cause from 'effect/Cause';
+import * as Effect from 'effect/Effect';
+import * as ManagedRuntime from 'effect/ManagedRuntime';
+
 import { checkSkillFileRead, checkSkillInvocation, slashSkillName } from './skillGate.ts';
 import { projectRootOf } from './skillRoots.ts';
 import type { TrustDecision } from './trustRegistry.ts';
@@ -14,35 +19,45 @@ type ToolCallEvent = {
   readonly input: { readonly path?: string };
 };
 
+type InputResult = { readonly action: 'continue' | 'handled' };
+
+type ToolCallResult = { readonly block: boolean; readonly reason?: string } | undefined;
+
 type GuardApi = {
   readonly on: {
     (
       event: 'input',
-      handler: (
-        event: InputEvent,
-        ctx: GuardContext,
-      ) => { readonly action: 'continue' | 'handled' },
+      handler: (event: InputEvent, ctx: GuardContext) => InputResult | Promise<InputResult>,
     ): void;
     (
       event: 'tool_call',
-      handler: (
-        event: ToolCallEvent,
-        ctx: GuardContext,
-      ) => { readonly block: boolean; readonly reason?: string } | undefined,
+      handler: (event: ToolCallEvent, ctx: GuardContext) => ToolCallResult | Promise<ToolCallResult>,
     ): void;
   };
 };
 
-const projectDirOf = (ctx: GuardContext): string => projectRootOf(ctx.cwd);
+const runtime = ManagedRuntime.make(NodeServices.layer);
 
-const denied = (decision: TrustDecision): string | undefined =>
-  decision.allowed ? undefined : `skill-guard: ${decision.reason}`;
+const reasonFor = (check: Effect.Effect<TrustDecision, unknown, ManagedRuntime.ManagedRuntime.Services<typeof runtime>>): Promise<string | undefined> =>
+  runtime.runPromise(
+    check.pipe(
+      Effect.map((decision) => (decision.allowed ? undefined : `skill-guard: ${decision.reason}`)),
+      Effect.catchCause((cause) => {
+        const error = Cause.squash(cause);
+        return Effect.succeed(`skill-guard: check failed: ${error instanceof Error ? error.message : String(error)}`);
+      }),
+    ),
+  );
 
 export default function skillsGuard(pi: GuardApi): void {
-  pi.on('input', (event, ctx) => {
+  pi.on('input', async (event, ctx) => {
     const name = slashSkillName(event.text, '/skill:');
-    const reason =
-      name === undefined ? undefined : denied(checkSkillInvocation(projectDirOf(ctx), name));
+    if (name === undefined) {
+      return { action: 'continue' };
+    }
+    const reason = await reasonFor(
+      projectRootOf(ctx.cwd).pipe(Effect.flatMap((projectDir) => checkSkillInvocation(projectDir, name))),
+    );
     if (reason === undefined) {
       return { action: 'continue' };
     }
@@ -50,12 +65,16 @@ export default function skillsGuard(pi: GuardApi): void {
     return { action: 'handled' };
   });
 
-  pi.on('tool_call', (event, ctx) => {
+  pi.on('tool_call', async (event, ctx) => {
     const path = event.input.path;
     if (event.toolName !== 'read' || path === undefined) {
       return undefined;
     }
-    const reason = denied(checkSkillFileRead(projectDirOf(ctx), ctx.cwd, path));
+    const reason = await reasonFor(
+      projectRootOf(ctx.cwd).pipe(
+        Effect.flatMap((projectDir) => checkSkillFileRead(projectDir, ctx.cwd, path)),
+      ),
+    );
     return reason === undefined ? undefined : { block: true, reason };
   });
 }
