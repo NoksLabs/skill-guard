@@ -1,0 +1,48 @@
+{
+  "name": "skill-guard",
+  "version": "0.1.0",
+  "description": "Trust gate for agent skills: scan, review, approve by content hash, and block unapproved or changed skills before Claude Code or Pi loads them",
+  "keywords": [
+    "agent-skills",
+    "claude-code",
+    "pi",
+    "supply-chain",
+    "prompt-injection",
+    "security",
+    "skills"
+  ],
+  "homepage": "https://github.com/NoksLabs/skill-guard#readme",
+  "bugs": {
+    "url": "https://github.com/NoksLabs/skill-guard/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/NoksLabs/skill-guard.git"
+  },
+  "license": "MIT",
+  "author": "NoksLabs",
+  "type": "module",
+  "bin": {
+    "skill-guard": "bin/skill-guard.js"
+  },
+  "exports": {
+    ".": "./dist/skillGate.js",
+    "./pi": "./dist/piExtension.js",
+    "./claude-hook": "./dist/claudeGate.js",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "bin",
+    "dist",
+    "src",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "node --disable-warning=ExperimentalWarning scripts/build.js",
+    "prepare": "node --disable-warning=ExperimentalWarning scripts/build.js"
+  },
+  "engines": {
+    "node": ">=22.18.0"
+  }
+}
